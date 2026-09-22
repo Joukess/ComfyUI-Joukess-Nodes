@@ -135,6 +135,69 @@ class PromptTimerStop:
         return (any,)
 
 
+class PromptTimerStartCurrent:
+    """Починає відлік часу для ПОТОЧНОГО прогону графа."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"optional": {"any": (any_type,)}}
+
+    RETURN_TYPES = (any_type,)
+    RETURN_NAMES = ("any",)
+    FUNCTION = "run"
+    CATEGORY = "utils/timer"
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        # Завжди виконувати заново, ніколи не брати з кешу.
+        return float("nan")
+
+    def run(self, any=None):
+        state = _load_state()
+        # perf_counter() краще підходить для вимірювання інтервалів,
+        # бо він монотонний і не залежить від зміни системного годинника.
+        state["current_run_start_time"] = time.perf_counter()
+        _save_state(state)
+
+        return (any,)
+
+
+class PromptTimerStopCurrent:
+    """Завершує поточний відлік і повертає його тривалість у секундах як STRING."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"any": (any_type,)}}
+
+    RETURN_TYPES = ("STRING", any_type)
+    RETURN_NAMES = ("elapsed_seconds", "any")
+    FUNCTION = "run"
+    CATEGORY = "utils/timer"
+    OUTPUT_NODE = True
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return float("nan")
+
+    def run(self, any):
+        state = _load_state()
+        start = state.get("current_run_start_time")
+
+        if start is None:
+            # Немає старту — повертаємо однозначне значення замість помилки.
+            elapsed_seconds = "0.00"
+        else:
+            elapsed = max(0.0, time.perf_counter() - float(start))
+            elapsed_seconds = f"{elapsed:.2f}"
+
+            # Прибираємо ключ після завершення, щоб старий старт
+            # не міг випадково використатись у наступному прогоні.
+            state.pop("current_run_start_time", None)
+            _save_state(state)
+
+        return (elapsed_seconds, any,)
+
+
 class SecondsToHumanString:
     """INT (секунди) -> STRING зручного формату: 23s / 45m / 1h 12m / 2h.
 
@@ -185,11 +248,15 @@ class SecondsToHumanString:
 NODE_CLASS_MAPPINGS = {
     "PromptTimerStart": PromptTimerStart,
     "PromptTimerStop": PromptTimerStop,
+    "PromptTimerStartCurrent": PromptTimerStartCurrent,
+    "PromptTimerStopCurrent": PromptTimerStopCurrent,
     "SecondsToHumanString": SecondsToHumanString,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "PromptTimerStart": "⏱ Prompt Timer — Get Average",
     "PromptTimerStop": "⏱ Prompt Timer — Save Current",
+    "PromptTimerStartCurrent": "⏱ Prompt Timer — Start Current",
+    "PromptTimerStopCurrent": "⏱ Prompt Timer — Get Current",
     "SecondsToHumanString": "⏱ Seconds → Human String",
 }
