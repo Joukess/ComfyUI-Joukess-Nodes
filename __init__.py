@@ -20,14 +20,19 @@ from .nodes.unzip_to_input import (
     NODE_CLASS_MAPPINGS as _unzip_nodes,
     NODE_DISPLAY_NAME_MAPPINGS as _unzip_names,
 )
+from .nodes.always_execute import (
+    NODE_CLASS_MAPPINGS as _always_nodes,
+    NODE_DISPLAY_NAME_MAPPINGS as _always_names,
+)
 
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
 
-for _mappings in (_timer_nodes, _step_nodes, _unzip_nodes):
+for _mappings in (_timer_nodes, _step_nodes, _unzip_nodes, _always_nodes):
     NODE_CLASS_MAPPINGS.update(_mappings)
 
-for _mappings in (_timer_names, _step_names, _unzip_names):
+for _mappings in (_timer_names, _step_names, _unzip_names, _always_names):
     NODE_DISPLAY_NAME_MAPPINGS.update(_mappings)
+
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
