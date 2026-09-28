@@ -1,0 +1,15 @@
+[project]
+name = "comfyui-joukess-nodes"
+version = "1.0.0"
+description = "A collection of utility custom nodes for ComfyUI by Joukess: prompt timer, step indices, RAM-free unzip, and more."
+license = "MIT"
+readme = "README.md"
+requires-python = ">= 3.10"
+
+[project.urls]
+Repository = "https://github.com/Joukess/ComfyUI-Promt-Timer"
+
+[tool.comfy]
+PublisherId = "joukess"
+DisplayName = "Joukess Nodes"
+Icon = ""

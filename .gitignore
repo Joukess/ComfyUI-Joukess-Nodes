@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+
+# Timer state file (generated at runtime)
+nodes/execution_timer_state.json
+execution_timer_state.json
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
