@@ -4,7 +4,7 @@ class StepIndices:
         return {"required": {
             "total": ("INT", {"default": 100, "min": 0, "max": 100000}),
             "step": ("INT", {"default": 24, "min": 1, "max": 10000}),
-            "last_index": (["N", "N-1"], {"default": "N"}),
+            "last_index": (["N", "N-1"], {"default": "N-1"}),
         }}
 
     RETURN_TYPES = ("STRING", "INT")

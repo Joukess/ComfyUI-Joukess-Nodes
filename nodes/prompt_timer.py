@@ -2,8 +2,8 @@
 Prompt Timer — набір нод для вимірювання часу виконання workflow.
 
 Ноди:
-    - PromptTimerStart / PromptTimerStop — середній час усіх прогонів
-    - PromptTimerStartCurrent / PromptTimerStopCurrent — час поточного прогону
+    - PromptTimerAverage  (mode: Start / End) — середній час усіх прогонів
+    - PromptTimerCurrent  (mode: Start / End) — час поточного прогону
     - SecondsToHumanString — INT (секунди) → людино-зрозумілий STRING
 """
 
@@ -48,124 +48,125 @@ def _save_state(state):
         print(f"[PromptTimer] Не вдалось зберегти стан: {e}")
 
 
-class PromptTimerStart:
-    """Виводить СЕРЕДНІЙ час усіх попередніх прогонів і фіксує старт поточного."""
+class PromptTimerAverage:
+    """Вимірює СЕРЕДНІЙ час виконання workflow по всіх прогонах.
+
+    Режим Start — ставиться на початку графа:
+        фіксує момент старту та повертає середній час попередніх прогонів.
+    Режим End — ставиться в кінці графа:
+        зберігає тривалість поточного прогону до статистики.
+    """
 
     @classmethod
     def INPUT_TYPES(cls):
-        return {"optional": {"any": (any_type,)}}
+        return {
+            "required": {
+                "mode": (["Start", "End"],),
+            },
+            "optional": {
+                "any": (any_type,),
+            },
+        }
 
     RETURN_TYPES = ("FLOAT", any_type)
     RETURN_NAMES = ("avg_seconds", "any")
     FUNCTION = "run"
     CATEGORY = "utils/timer"
+    OUTPUT_NODE = True  # потрібно для режиму End, щоб нода завжди виконувалась
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):
         # завжди виконувати заново, ніколи не брати з кешу
         return float("nan")
 
-    def run(self, any=None):
+    def run(self, mode, any=None):
         state = _load_state()
-        total = state.get("total_duration", 0.0)
-        count = state.get("count", 0)
-        avg_seconds = round(total / count, 2) if count > 0 else 0.0
 
-        state["start_time"] = time.time()
-        _save_state(state)
+        if mode == "Start":
+            # Повертаємо середній час попередніх прогонів і фіксуємо старт.
+            total = state.get("total_duration", 0.0)
+            count = state.get("count", 0)
+            avg_seconds = round(total / count, 2) if count > 0 else 0.0
 
-        return (avg_seconds, any)
-
-
-class PromptTimerStop:
-    """Ставиться пізно в графі. Додає тривалість поточного прогону до статистики."""
-
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {"required": {"any": (any_type,)}}
-
-    RETURN_TYPES = (any_type,)
-    RETURN_NAMES = ("any",)
-    FUNCTION = "run"
-    CATEGORY = "utils/timer"
-    OUTPUT_NODE = True  # завжди виконується, навіть якщо вихід нікуди не веде
-
-    @classmethod
-    def IS_CHANGED(cls, **kwargs):
-        return float("nan")
-
-    def run(self, any):
-        state = _load_state()
-        start = state.get("start_time")
-        if start is not None:
-            duration = time.time() - start
-            state["total_duration"] = state.get("total_duration", 0.0) + duration
-            state["count"] = state.get("count", 0) + 1
+            state["start_time"] = time.time()
             _save_state(state)
-        return (any,)
+
+            return (avg_seconds, any)
+
+        else:  # mode == "End"
+            # Додаємо тривалість поточного прогону до статистики.
+            start = state.get("start_time")
+            if start is not None:
+                duration = time.time() - start
+                state["total_duration"] = state.get("total_duration", 0.0) + duration
+                state["count"] = state.get("count", 0) + 1
+                _save_state(state)
+
+            # Повертаємо оновлений середній час.
+            total = state.get("total_duration", 0.0)
+            count = state.get("count", 0)
+            avg_seconds = round(total / count, 2) if count > 0 else 0.0
+
+            return (avg_seconds, any)
 
 
-class PromptTimerStartCurrent:
-    """Починає відлік часу для ПОТОЧНОГО прогону графа."""
+class PromptTimerCurrent:
+    """Вимірює час ПОТОЧНОГО прогону workflow.
+
+    Режим Start — ставиться на початку графа:
+        фіксує момент старту відліку.
+    Режим End — ставиться в кінці графа:
+        повертає тривалість поточного прогону у секундах.
+    """
 
     @classmethod
     def INPUT_TYPES(cls):
-        return {"optional": {"any": (any_type,)}}
+        return {
+            "required": {
+                "mode": (["Start", "End"],),
+            },
+            "optional": {
+                "any": (any_type,),
+            },
+        }
 
-    RETURN_TYPES = (any_type,)
-    RETURN_NAMES = ("any",)
+    RETURN_TYPES = ("STRING", any_type)
+    RETURN_NAMES = ("elapsed_seconds", "any")
     FUNCTION = "run"
     CATEGORY = "utils/timer"
+    OUTPUT_NODE = True  # потрібно для режиму End
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):
         # Завжди виконувати заново, ніколи не брати з кешу.
         return float("nan")
 
-    def run(self, any=None):
+    def run(self, mode, any=None):
         state = _load_state()
-        # perf_counter() краще підходить для вимірювання інтервалів,
-        # бо він монотонний і не залежить від зміни системного годинника.
-        state["current_run_start_time"] = time.perf_counter()
-        _save_state(state)
 
-        return (any,)
-
-
-class PromptTimerStopCurrent:
-    """Завершує поточний відлік і повертає його тривалість у секундах як STRING."""
-
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {"required": {"any": (any_type,)}}
-
-    RETURN_TYPES = ("STRING", any_type)
-    RETURN_NAMES = ("elapsed_seconds", "any")
-    FUNCTION = "run"
-    CATEGORY = "utils/timer"
-    OUTPUT_NODE = True
-
-    @classmethod
-    def IS_CHANGED(cls, **kwargs):
-        return float("nan")
-
-    def run(self, any):
-        state = _load_state()
-        start = state.get("current_run_start_time")
-
-        if start is None:
-            # Немає старту — повертаємо однозначне значення замість помилки.
-            elapsed_seconds = "0.00"
-        else:
-            elapsed = max(0.0, time.perf_counter() - float(start))
-            elapsed_seconds = f"{elapsed:.2f}"
-
-            # Прибираємо ключ після завершення, щоб старий старт
-            # не міг випадково використатись у наступному прогоні.
-            state.pop("current_run_start_time", None)
+        if mode == "Start":
+            # perf_counter() краще підходить для вимірювання інтервалів,
+            # бо він монотонний і не залежить від зміни системного годинника.
+            state["current_run_start_time"] = time.perf_counter()
             _save_state(state)
 
-        return (elapsed_seconds, any,)
+            return ("0.00", any)
+
+        else:  # mode == "End"
+            start = state.get("current_run_start_time")
+
+            if start is None:
+                elapsed_seconds = "0.00"
+            else:
+                elapsed = max(0.0, time.perf_counter() - float(start))
+                elapsed_seconds = f"{elapsed:.2f}"
+
+                # Прибираємо ключ після завершення, щоб старий старт
+                # не міг випадково використатись у наступному прогоні.
+                state.pop("current_run_start_time", None)
+                _save_state(state)
+
+            return (elapsed_seconds, any)
 
 
 class SecondsToHumanString:
@@ -216,17 +217,13 @@ class SecondsToHumanString:
 
 
 NODE_CLASS_MAPPINGS = {
-    "PromptTimerStart": PromptTimerStart,
-    "PromptTimerStop": PromptTimerStop,
-    "PromptTimerStartCurrent": PromptTimerStartCurrent,
-    "PromptTimerStopCurrent": PromptTimerStopCurrent,
+    "PromptTimerAverage": PromptTimerAverage,
+    "PromptTimerCurrent": PromptTimerCurrent,
     "SecondsToHumanString": SecondsToHumanString,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "PromptTimerStart": "⏱ Prompt Timer — Get Average",
-    "PromptTimerStop": "⏱ Prompt Timer — Save Current",
-    "PromptTimerStartCurrent": "⏱ Prompt Timer — Start Current",
-    "PromptTimerStopCurrent": "⏱ Prompt Timer — Get Current",
+    "PromptTimerAverage": "⏱ Prompt Timer Average",
+    "PromptTimerCurrent": "⏱ Prompt Timer Current",
     "SecondsToHumanString": "⏱ Seconds → Human String",
 }
