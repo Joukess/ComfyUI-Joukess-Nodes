@@ -4,13 +4,13 @@ Prompt Timer — набір нод для вимірювання часу вик
 Ноди:
     - PromptTimerAverage  (mode: Start / End) — середній час усіх прогонів
     - PromptTimerCurrent  (mode: Start / End) — час поточного прогону
-    - SecondsToHumanString — INT (секунди) → людино-зрозумілий STRING
+    - SecondsToHumanString — FLOAT (секунди) → людино-зрозумілий STRING
 """
 
 import time
 import json
 import os
-import math
+from decimal import Decimal, ROUND_HALF_UP
 
 STATE_FILE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "execution_timer_state.json"
@@ -96,7 +96,7 @@ class PromptTimerAverage:
             state = _load_state()
             total = state.get("total_duration", 0.0)
             count = state.get("count", 0)
-            avg_seconds = round(total / count, 2) if count > 0 else 0.0
+            avg_seconds = float(Decimal(str(total / count)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if count > 0 else 0.0
 
             # Мітка часу — остання дія, щоб I/O не потрапляв у вимір.
             _average_start = time.perf_counter()
@@ -119,7 +119,7 @@ class PromptTimerAverage:
             # Повертаємо оновлений середній час.
             total = state.get("total_duration", 0.0)
             count = state.get("count", 0)
-            avg_seconds = round(total / count, 2) if count > 0 else 0.0
+            avg_seconds = float(Decimal(str(total / count)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if count > 0 else 0.0
 
             return (avg_seconds, any)
 
@@ -144,8 +144,8 @@ class PromptTimerCurrent:
             },
         }
 
-    RETURN_TYPES = ("STRING", any_type)
-    RETURN_NAMES = ("elapsed_seconds", "any")
+    RETURN_TYPES = ("STRING", "FLOAT", any_type)
+    RETURN_NAMES = ("elapsed_seconds", "elapsed_float", "any")
     FUNCTION = "run"
     CATEGORY = "utils/timer"
     OUTPUT_NODE = True  # потрібно для режиму End
@@ -162,36 +162,36 @@ class PromptTimerCurrent:
             # perf_counter() — остання дія перед return.
             # Жодного файлового I/O, мінімальна похибка.
             _current_start = time.perf_counter()
-            return ("0.00", any)
+            return ("0.00", 0.0, any)
 
         # mode == "End"
         # perf_counter() — перша дія, щоб I/O не потрапляв у вимір.
         now = time.perf_counter()
 
         if _current_start is None:
-            return ("0.00", any)
+            return ("0.00", 0.0, any)
 
         elapsed = max(0.0, now - _current_start)
         _current_start = None
-        return (f"{elapsed:.2f}", any)
+        elapsed_rounded = float(Decimal(str(elapsed)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+        return (f"{elapsed_rounded:.2f}", elapsed_rounded, any)
 
 
 class SecondsToHumanString:
-    """INT (секунди) -> STRING зручного формату: 23s / 45m / 1h 12m / 2h.
+    """FLOAT (секунди) -> STRING зручного формату.
 
-    Округлення завжди в БІЛЬШУ сторону на рівні хвилин:
-        < 60s          -> "{s}s"
-        60s..3599s     -> хвилини = ceil(s/60); якщо вийшло 60 -> "1h"
-        >= 3600s       -> години = s//3600, залишок -> хвилини = ceil(залишок/60);
-                          якщо хвилини == 60 -> +1 година, 0 хвилин;
-                          якщо хвилини == 0  -> "{h}h", інакше "{h}h {m}m"
+    Вхідне значення округлюється до цілих секунд за стандартним
+    математичним правилом (ROUND_HALF_UP):
+        < 60s   -> повертає вхідний FLOAT як рядок (напр. "23.87")
+        >= 60s  -> розкладає на h/m/s і показує всі ненульові складові
+                   (напр. "3m 34s", "1h 12m", "2h 3m 12s")
     """
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "seconds": ("INT", {"default": 0, "min": 0, "max": 2**31 - 1})
+                "seconds": ("FLOAT", {"default": 0.0, "min": 0.0, "max": float(2**31 - 1)})
             }
         }
 
@@ -201,26 +201,30 @@ class SecondsToHumanString:
     CATEGORY = "utils/timer"
 
     def run(self, seconds):
-        seconds = max(0, int(seconds))
+        seconds = max(0.0, float(seconds))
 
-        if seconds < 60:
-            return (f"{seconds}s",)
+        # Округлення до цілих секунд за стандартним математичним правилом.
+        total_secs = int(
+            Decimal(str(seconds)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        )
 
-        if seconds < 3600:
-            minutes = math.ceil(seconds / 60)
-            if minutes >= 60:
-                return ("1h",)
-            return (f"{minutes}m",)
+        if total_secs < 60:
+            # Повертаємо оригінальний FLOAT як рядок.
+            return (f"{seconds}",)
 
-        hours, remainder = divmod(seconds, 3600)
-        minutes = math.ceil(remainder / 60)
-        if minutes >= 60:
-            hours += 1
-            minutes = 0
+        # Розкладаємо на години, хвилини, секунди.
+        hours, remainder = divmod(total_secs, 3600)
+        minutes, secs = divmod(remainder, 60)
 
-        if minutes == 0:
-            return (f"{hours}h",)
-        return (f"{hours}h {minutes}m",)
+        parts = []
+        if hours > 0:
+            parts.append(f"{hours}h")
+        if minutes > 0:
+            parts.append(f"{minutes}m")
+        if secs > 0:
+            parts.append(f"{secs}s")
+
+        return (" ".join(parts),)
 
 
 NODE_CLASS_MAPPINGS = {
