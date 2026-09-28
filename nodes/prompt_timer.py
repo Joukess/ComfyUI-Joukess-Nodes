@@ -29,6 +29,11 @@ class AnyType(str):
 
 any_type = AnyType("*")
 
+# Стартові мітки часу зберігаються у пам'яті модуля,
+# щоб файлові операції не потрапляли у вимір.
+_average_start: float | None = None
+_current_start: float | None = None
+
 
 def _load_state():
     if os.path.exists(STATE_FILE):
@@ -80,27 +85,32 @@ class PromptTimerAverage:
         return float("nan")
 
     def run(self, mode, any=None):
-        state = _load_state()
+        global _average_start
 
         if mode == "Start":
-            # Повертаємо середній час попередніх прогонів і фіксуємо старт.
+            # Спочатку читаємо статистику (до старту відліку).
+            state = _load_state()
             total = state.get("total_duration", 0.0)
             count = state.get("count", 0)
             avg_seconds = round(total / count, 2) if count > 0 else 0.0
 
-            state["start_time"] = time.time()
-            _save_state(state)
+            # Мітка часу — остання дія, щоб I/O не потрапляв у вимір.
+            _average_start = time.perf_counter()
 
             return (avg_seconds, any)
 
         else:  # mode == "End"
-            # Додаємо тривалість поточного прогону до статистики.
-            start = state.get("start_time")
-            if start is not None:
-                duration = time.time() - start
+            # Мітка часу — перша дія, щоб I/O не потрапляв у вимір.
+            now = time.perf_counter()
+
+            if _average_start is not None:
+                duration = max(0.0, now - _average_start)
+                state = _load_state()
                 state["total_duration"] = state.get("total_duration", 0.0) + duration
                 state["count"] = state.get("count", 0) + 1
                 _save_state(state)
+            else:
+                state = _load_state()
 
             # Повертаємо оновлений середній час.
             total = state.get("total_duration", 0.0)
@@ -142,31 +152,24 @@ class PromptTimerCurrent:
         return float("nan")
 
     def run(self, mode, any=None):
-        state = _load_state()
+        global _current_start
 
         if mode == "Start":
-            # perf_counter() краще підходить для вимірювання інтервалів,
-            # бо він монотонний і не залежить від зміни системного годинника.
-            state["current_run_start_time"] = time.perf_counter()
-            _save_state(state)
-
+            # perf_counter() — остання дія перед return.
+            # Жодного файлового I/O, мінімальна похибка.
+            _current_start = time.perf_counter()
             return ("0.00", any)
 
-        else:  # mode == "End"
-            start = state.get("current_run_start_time")
+        # mode == "End"
+        # perf_counter() — перша дія, щоб I/O не потрапляв у вимір.
+        now = time.perf_counter()
 
-            if start is None:
-                elapsed_seconds = "0.00"
-            else:
-                elapsed = max(0.0, time.perf_counter() - float(start))
-                elapsed_seconds = f"{elapsed:.2f}"
+        if _current_start is None:
+            return ("0.00", any)
 
-                # Прибираємо ключ після завершення, щоб старий старт
-                # не міг випадково використатись у наступному прогоні.
-                state.pop("current_run_start_time", None)
-                _save_state(state)
-
-            return (elapsed_seconds, any)
+        elapsed = max(0.0, now - _current_start)
+        _current_start = None
+        return (f"{elapsed:.2f}", any)
 
 
 class SecondsToHumanString:
