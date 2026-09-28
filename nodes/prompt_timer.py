@@ -53,6 +53,10 @@ def _save_state(state):
         print(f"[PromptTimer] Не вдалось зберегти стан: {e}")
 
 
+# Скидаємо статистику при запуску ComfyUI (імпорт модуля = старт сервера).
+_save_state({})
+
+
 class PromptTimerAverage:
     """Вимірює СЕРЕДНІЙ час виконання workflow по всіх прогонах.
 
