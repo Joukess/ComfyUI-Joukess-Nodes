@@ -24,14 +24,18 @@ from .nodes.always_execute import (
     NODE_CLASS_MAPPINGS as _always_nodes,
     NODE_DISPLAY_NAME_MAPPINGS as _always_names,
 )
+from .nodes.load_video_linkable import (
+    NODE_CLASS_MAPPINGS as _video_nodes,
+    NODE_DISPLAY_NAME_MAPPINGS as _video_names,
+)
 
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
 
-for _mappings in (_timer_nodes, _step_nodes, _unzip_nodes, _always_nodes):
+for _mappings in (_timer_nodes, _step_nodes, _unzip_nodes, _always_nodes, _video_nodes):
     NODE_CLASS_MAPPINGS.update(_mappings)
 
-for _mappings in (_timer_names, _step_names, _unzip_names, _always_names):
+for _mappings in (_timer_names, _step_names, _unzip_names, _always_names, _video_names):
     NODE_DISPLAY_NAME_MAPPINGS.update(_mappings)
 
 
